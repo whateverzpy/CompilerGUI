@@ -6,6 +6,9 @@
   var parseResult = null;
   var parseStepIndex = -1;
   var parseTimer = null;
+  var accumulatedNodes = [];
+  var accumulatedEdges = [];
+  var isAutoPlaying = false;
 
   var elGrammarInput = document.getElementById('grammarInput');
   var elBtnAnalyze = document.getElementById('btnAnalyze');
@@ -17,9 +20,12 @@
   var elBtnAll = document.getElementById('btnAll');
   var elInputString = document.getElementById('inputString');
   var elBtnParse = document.getElementById('btnParse');
-  var elBtnParseStep = document.getElementById('btnParseStep');
   var elBtnParseReset = document.getElementById('btnParseReset');
   var elThemeToggle = document.getElementById('themeToggle');
+  var elBtnPrevStep = document.getElementById('btnPrevStep');
+  var elBtnNextStep = document.getElementById('btnNextStep');
+  var elBtnAutoPlay = document.getElementById('btnAutoPlay');
+  var elStepIndicator = document.getElementById('stepIndicator');
 
   var elGrammarDisplay = document.getElementById('grammarDisplay');
   var elFirstSteps = document.getElementById('firstSteps');
@@ -44,6 +50,8 @@
   ];
   var currentExample = 0;
 
+  initCollapseToggle();
+
   elBtnExample.addEventListener('click', function () {
     elGrammarInput.value = exampleGrammars[currentExample];
     currentExample = (currentExample + 1) % exampleGrammars.length;
@@ -60,15 +68,15 @@
   });
 
   elBtnFirst.addEventListener('click', function () {
-    openSection(sectionFirst);
+    toggleSection(sectionFirst);
   });
 
   elBtnFollow.addEventListener('click', function () {
-    openSection(sectionFollow);
+    toggleSection(sectionFollow);
   });
 
   elBtnTable.addEventListener('click', function () {
-    openSection(sectionTable);
+    toggleSection(sectionTable);
   });
 
   elBtnAll.addEventListener('click', function () {
@@ -79,11 +87,7 @@
   });
 
   elBtnParse.addEventListener('click', function () {
-    startParse(false);
-  });
-
-  elBtnParseStep.addEventListener('click', function () {
-    startParse(true);
+    startParse();
   });
 
   elBtnParseReset.addEventListener('click', function () {
@@ -98,6 +102,30 @@
       html.setAttribute('data-theme', 'dark');
     }
   });
+
+  elBtnPrevStep.addEventListener('click', function () {
+    prevStep();
+  });
+
+  elBtnNextStep.addEventListener('click', function () {
+    nextStep();
+  });
+
+  elBtnAutoPlay.addEventListener('click', function () {
+    toggleAutoPlay();
+  });
+
+  function initCollapseToggle() {
+    var collapseTitles = document.querySelectorAll('.collapse-title.cursor-pointer');
+    collapseTitles.forEach(function (title) {
+      title.addEventListener('click', function () {
+        var parent = this.closest('.collapse');
+        if (parent) {
+          parent.classList.toggle('collapse-open');
+        }
+      });
+    });
+  }
 
   function analyzeGrammar() {
     try {
@@ -119,6 +147,11 @@
     Visualizer.renderSetTable('followResult', followResult.follow, grammar, 'FOLLOW');
 
     tableResult = ParsingTable.buildTable(grammar, firstResult.first, followResult.follow);
+    window.currentTableInfo = tableResult.tableInfo;
+    window.currentTable = tableResult.table;
+    window.currentGrammar = grammar;
+    window.currentFirstResult = firstResult;
+    window.currentFollowResult = followResult;
     Visualizer.renderParsingTable('tableResult', tableResult, grammar);
     renderConflictInfo();
 
@@ -128,7 +161,6 @@
     elBtnAll.disabled = false;
     elInputString.disabled = false;
     elBtnParse.disabled = false;
-    elBtnParseStep.disabled = false;
     elBtnParseReset.disabled = false;
 
     openSection(sectionGrammar);
@@ -276,7 +308,7 @@
     }
   }
 
-  function startParse(stepping) {
+  function startParse() {
     var inputStr = elInputString.value.trim();
     if (!inputStr) {
       showToast('请输入要分析的字符串', 'warning');
@@ -291,39 +323,66 @@
     openSection(sectionParse);
 
     parseResult = ParsingTable.simulateParse(grammar, tableResult.table, inputStr);
+    accumulatedNodes = [];
+    accumulatedEdges = [];
+    parseStepIndex = -1;
 
-    if (stepping) {
-      parseStepIndex = -1;
-      elParseSteps.innerHTML = '';
-      Visualizer.renderParseTree('parseTree', [], []);
-      stepForward();
-    } else {
-      Visualizer.renderParseSteps('parseSteps', parseResult.steps);
-      Visualizer.renderParseTree('parseTree', parseResult.treeNodes, parseResult.treeEdges);
+    elBtnPrevStep.disabled = false;
+    elBtnNextStep.disabled = false;
+    elBtnAutoPlay.disabled = false;
 
-      if (parseResult.success) {
-        showToast('分析成功！输入串被接受', 'success');
-      } else {
-        showToast('分析失败！输入串被拒绝', 'error');
-      }
-    }
+    updateStepIndicator();
+    goToStep(0);
   }
 
-  function stepForward() {
-    if (!parseResult || parseStepIndex >= parseResult.steps.length - 1) {
-      showToast('分析已完成', 'info');
+  function goToStep(targetIndex) {
+    if (!parseResult || targetIndex < 0 || targetIndex >= parseResult.steps.length) {
       return;
     }
 
-    parseStepIndex++;
-    var stepsToShow = parseResult.steps.slice(0, parseStepIndex + 1);
-    Visualizer.renderParseSteps('parseSteps', stepsToShow);
+    if (targetIndex < parseStepIndex) {
+      accumulatedNodes = [];
+      accumulatedEdges = [];
+      for (var i = 0; i <= targetIndex; i++) {
+        var step = parseResult.steps[i];
+        if (step.newNodes) {
+          for (var j = 0; j < step.newNodes.length; j++) {
+            accumulatedNodes.push(step.newNodes[j]);
+          }
+        }
+        if (step.newEdges) {
+          for (var j = 0; j < step.newEdges.length; j++) {
+            accumulatedEdges.push(step.newEdges[j]);
+          }
+        }
+      }
+    } else if (targetIndex > parseStepIndex) {
+      for (var i = parseStepIndex + 1; i <= targetIndex; i++) {
+        var step = parseResult.steps[i];
+        if (step.newNodes) {
+          for (var j = 0; j < step.newNodes.length; j++) {
+            accumulatedNodes.push(step.newNodes[j]);
+          }
+        }
+        if (step.newEdges) {
+          for (var j = 0; j < step.newEdges.length; j++) {
+            accumulatedEdges.push(step.newEdges[j]);
+          }
+        }
+      }
+    }
 
-    var currentStep = parseResult.steps[parseStepIndex];
-    var partialNodes = parseResult.treeNodes.slice();
-    var partialEdges = parseResult.treeEdges.slice();
+    parseStepIndex = targetIndex;
 
-    Visualizer.renderParseTree('parseTree', partialNodes, partialEdges);
+    if (parseStepIndex > 0) {
+      var stepsToShow = parseResult.steps.slice(1, parseStepIndex + 1);
+      Visualizer.renderParseStepsWithHighlight('parseSteps', stepsToShow, stepsToShow.length - 1);
+    } else {
+      elParseSteps.innerHTML = '';
+    }
+
+    Visualizer.renderParseTree('parseTree', accumulatedNodes, accumulatedEdges);
+    updateStepIndicator();
 
     if (parseStepIndex >= parseResult.steps.length - 1) {
       if (parseResult.success) {
@@ -334,23 +393,80 @@
     }
   }
 
-  elBtnParseStep.addEventListener('click', function () {
-    if (parseResult && parseStepIndex < parseResult.steps.length - 1) {
-      stepForward();
-    } else {
-      startParse(true);
+  function prevStep() {
+    if (parseStepIndex > 0) {
+      goToStep(parseStepIndex - 1);
     }
-  });
+  }
 
-  function resetParse() {
-    parseResult = null;
-    parseStepIndex = -1;
+  function nextStep() {
+    if (parseStepIndex < parseResult.steps.length - 1) {
+      goToStep(parseStepIndex + 1);
+    }
+  }
+
+  function toggleAutoPlay() {
+    if (isAutoPlaying) {
+      stopAutoPlay();
+    } else {
+      startAutoPlay();
+    }
+  }
+
+  function startAutoPlay() {
+    if (!parseResult || parseStepIndex >= parseResult.steps.length - 1) {
+      return;
+    }
+    isAutoPlaying = true;
+    elBtnAutoPlay.textContent = '暂停';
+    elBtnAutoPlay.classList.remove('btn-accent');
+    elBtnAutoPlay.classList.add('btn-warning');
+    parseTimer = setInterval(function () {
+      if (parseStepIndex < parseResult.steps.length - 1) {
+        nextStep();
+      } else {
+        stopAutoPlay();
+      }
+    }, 800);
+  }
+
+  function stopAutoPlay() {
+    isAutoPlaying = false;
+    elBtnAutoPlay.textContent = '自动播放';
+    elBtnAutoPlay.classList.remove('btn-warning');
+    elBtnAutoPlay.classList.add('btn-accent');
     if (parseTimer) {
       clearInterval(parseTimer);
       parseTimer = null;
     }
+  }
+
+  function updateStepIndicator() {
+    if (parseResult && parseResult.steps.length > 0) {
+      var displayIndex = parseStepIndex;
+      var totalSteps = parseResult.steps.length - 1;
+      elStepIndicator.textContent = '步骤: ' + displayIndex + ' / ' + totalSteps;
+    } else {
+      elStepIndicator.textContent = '步骤: 0 / 0';
+    }
+  }
+
+  function resetParse() {
+    stopAutoPlay();
+    parseResult = null;
+    parseStepIndex = -1;
+    accumulatedNodes = [];
+    accumulatedEdges = [];
+    if (parseTimer) {
+      clearInterval(parseTimer);
+      parseTimer = null;
+    }
+    elBtnPrevStep.disabled = true;
+    elBtnNextStep.disabled = true;
+    elBtnAutoPlay.disabled = true;
     elParseSteps.innerHTML = '<div class="text-center text-base-content/50 py-4">输入字符串后点击"开始分析"</div>';
     elParseTree.innerHTML = '<div class="flex items-center justify-center h-full text-base-content/50">暂无语法树</div>';
+    updateStepIndicator();
   }
 
   function resetAll() {
@@ -365,7 +481,6 @@
     elBtnAll.disabled = true;
     elInputString.disabled = true;
     elBtnParse.disabled = true;
-    elBtnParseStep.disabled = true;
     elBtnParseReset.disabled = true;
 
     elGrammarDisplay.innerHTML = '';
@@ -386,18 +501,20 @@
   }
 
   function openSection(section) {
-    var checkbox = section.querySelector('input[type="checkbox"]');
-    if (checkbox && !checkbox.checked) {
-      checkbox.checked = true;
+    if (section) {
       section.classList.add('collapse-open');
     }
   }
 
   function closeSection(section) {
-    var checkbox = section.querySelector('input[type="checkbox"]');
-    if (checkbox && checkbox.checked) {
-      checkbox.checked = false;
+    if (section) {
       section.classList.remove('collapse-open');
+    }
+  }
+
+  function toggleSection(section) {
+    if (section) {
+      section.classList.toggle('collapse-open');
     }
   }
 

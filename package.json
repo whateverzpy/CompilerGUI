@@ -1,0 +1,15 @@
+{
+  "name": "compilergui",
+  "version": "1.0.0",
+  "description": "编译原理可视化演示工具",
+  "scripts": {
+    "build": "tailwindcss -i ./css/input.css -o ./css/output.css --minified",
+    "dev": "tailwindcss -i ./css/input.css -o ./css/output.css --watch"
+  },
+  "devDependencies": {
+    "tailwindcss": "^3.4.0"
+  },
+  "dependencies": {
+    "daisyui": "^4.12.14"
+  }
+}

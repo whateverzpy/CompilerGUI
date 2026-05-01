@@ -4,9 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>LL(1) 预测分析表构造演示</title>
-  <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.14/dist/full.min.css" rel="stylesheet" />
-  <script src="https://cdn.tailwindcss.com"></script>
-  <link rel="stylesheet" href="css/style.css" />
+  <link rel="stylesheet" href="css/output.css" />
 </head>
 <body class="min-h-screen bg-base-200">
 
@@ -91,7 +89,6 @@ F -> ( E ) | id</textarea>
             </div>
             <div class="flex gap-2 mt-2">
               <button id="btnParse" class="btn btn-secondary btn-sm flex-1" disabled>开始分析</button>
-              <button id="btnParseStep" class="btn btn-accent btn-sm flex-1" disabled>单步执行</button>
               <button id="btnParseReset" class="btn btn-ghost btn-sm" disabled>重置</button>
             </div>
           </div>
@@ -101,9 +98,8 @@ F -> ( E ) | id</textarea>
 
       <div class="lg:col-span-8 space-y-6">
 
-        <div id="sectionGrammar" class="card bg-base-100 shadow-xl collapse">
-          <input type="checkbox" />
-          <div class="collapse-title text-lg font-medium flex items-center gap-2">
+        <div id="sectionGrammar" class="card bg-base-100 shadow-xl collapse collapse-arrow">
+          <div class="collapse-title text-lg font-medium flex items-center gap-2 cursor-pointer">
             <span class="badge badge-primary">0</span>
             文法展示
           </div>
@@ -112,9 +108,8 @@ F -> ( E ) | id</textarea>
           </div>
         </div>
 
-        <div id="sectionFirst" class="card bg-base-100 shadow-xl collapse">
-          <input type="checkbox" />
-          <div class="collapse-title text-lg font-medium flex items-center gap-2">
+        <div id="sectionFirst" class="card bg-base-100 shadow-xl collapse collapse-arrow">
+          <div class="collapse-title text-lg font-medium flex items-center gap-2 cursor-pointer">
             <span class="badge badge-secondary">1</span>
             FIRST 集计算
           </div>
@@ -125,9 +120,8 @@ F -> ( E ) | id</textarea>
           </div>
         </div>
 
-        <div id="sectionFollow" class="card bg-base-100 shadow-xl collapse">
-          <input type="checkbox" />
-          <div class="collapse-title text-lg font-medium flex items-center gap-2">
+        <div id="sectionFollow" class="card bg-base-100 shadow-xl collapse collapse-arrow">
+          <div class="collapse-title text-lg font-medium flex items-center gap-2 cursor-pointer">
             <span class="badge badge-accent">2</span>
             FOLLOW 集计算
           </div>
@@ -138,9 +132,8 @@ F -> ( E ) | id</textarea>
           </div>
         </div>
 
-        <div id="sectionTable" class="card bg-base-100 shadow-xl collapse">
-          <input type="checkbox" />
-          <div class="collapse-title text-lg font-medium flex items-center gap-2">
+        <div id="sectionTable" class="card bg-base-100 shadow-xl collapse collapse-arrow">
+          <div class="collapse-title text-lg font-medium flex items-center gap-2 cursor-pointer">
             <span class="badge badge-info">3</span>
             LL(1) 预测分析表
           </div>
@@ -150,21 +143,36 @@ F -> ( E ) | id</textarea>
           </div>
         </div>
 
-        <div id="sectionParse" class="card bg-base-100 shadow-xl collapse">
-          <input type="checkbox" />
-          <div class="collapse-title text-lg font-medium flex items-center gap-2">
+        <div id="sectionParse" class="card bg-base-100 shadow-xl collapse collapse-arrow">
+          <div class="collapse-title text-lg font-medium flex items-center gap-2 cursor-pointer">
             <span class="badge badge-success">4</span>
             预测分析过程
           </div>
           <div class="collapse-content">
-            <div class="grid grid-cols-1 xl:grid-cols-2 gap-4">
+            <div class="flex flex-wrap gap-2 mb-4 items-center justify-between">
+              <div class="flex gap-2 items-center">
+                <button id="btnPrevStep" class="btn btn-sm btn-outline" disabled>
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>
+                  上一步
+                </button>
+                <span id="stepIndicator" class="text-sm font-mono text-base-content/70">步骤: 0 / 0</span>
+                <button id="btnNextStep" class="btn btn-sm btn-outline" disabled>
+                  下一步
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"/></svg>
+                </button>
+              </div>
+              <div class="flex gap-2">
+                <button id="btnAutoPlay" class="btn btn-sm btn-accent" disabled>自动播放</button>
+              </div>
+            </div>
+            <div class="grid grid-cols-1 gap-4">
               <div>
                 <h3 class="font-semibold mb-2">分析步骤</h3>
-                <div id="parseSteps" class="overflow-x-auto max-h-96"></div>
+                <div id="parseSteps" class="overflow-x-auto max-h-64"></div>
               </div>
               <div>
                 <h3 class="font-semibold mb-2">语法树</h3>
-                <div id="parseTree" class="border border-base-300 rounded-lg min-h-[300px]"></div>
+                <div id="parseTree" class="border border-base-300 rounded-lg"></div>
               </div>
             </div>
           </div>

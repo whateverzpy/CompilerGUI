@@ -1,3 +1,7 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
 .step-highlight {
   animation: stepPulse 0.6s ease-out;
 }
@@ -22,12 +26,6 @@
   background-color: hsl(var(--s) / 0.2);
   border: 1px solid hsl(var(--s) / 0.5);
   color: hsl(var(--s));
-}
-
-.set-tag-old {
-  background-color: hsl(var(--b1) / 0.5);
-  border: 1px solid hsl(var(--bc) / 0.2);
-  color: hsl(var(--bc) / 0.6);
 }
 
 .production-rule {
@@ -67,7 +65,8 @@
 }
 
 #parseTree {
-  min-height: 300px;
+  min-height: 600px;
+  height: 600px;
   background: hsl(var(--b2));
 }
 
@@ -99,4 +98,13 @@
 
 .overflow-x-auto::-webkit-scrollbar-thumb:hover {
   background: hsl(var(--bc) / 0.5);
+}
+
+.collapse-title.cursor-pointer {
+  cursor: pointer;
+}
+
+.step-row-highlight {
+  background-color: hsl(var(--p) / 0.2) !important;
+  font-weight: 500;
 }

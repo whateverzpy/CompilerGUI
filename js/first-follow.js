@@ -1,5 +1,4 @@
 var FirstFollow = (function () {
-
   function computeFirst(grammar) {
     var first = {};
     var steps = [];
@@ -44,7 +43,7 @@ var FirstFollow = (function () {
             production: prod,
             nonTerminal: A,
             added: Array.from(added),
-            currentFirst: Array.from(first[A])
+            currentFirst: Array.from(first[A]),
           });
         }
       }
@@ -53,7 +52,7 @@ var FirstFollow = (function () {
         steps.push({
           round: round,
           changes: roundChanges,
-          snapshot: deepCopyFirst(first, grammar)
+          snapshot: deepCopyFirst(first, grammar),
         });
       }
     }
@@ -104,13 +103,16 @@ var FirstFollow = (function () {
 
     steps.push({
       round: 0,
-      changes: [{
-        nonTerminal: grammar.startSymbol,
-        reason: '开始符号 ' + grammar.startSymbol + ' 的 FOLLOW 集初始化为 { $ }',
-        added: [Grammar.END_MARKER],
-        currentFollow: Array.from(follow[grammar.startSymbol])
-      }],
-      snapshot: deepCopyFollow(follow, grammar)
+      changes: [
+        {
+          nonTerminal: grammar.startSymbol,
+          reason:
+            "开始符号 " + grammar.startSymbol + " 的 FOLLOW 集初始化为 { # }",
+          added: [Grammar.END_MARKER],
+          currentFollow: Array.from(follow[grammar.startSymbol]),
+        },
+      ],
+      snapshot: deepCopyFollow(follow, grammar),
     });
 
     var changed = true;
@@ -162,18 +164,40 @@ var FirstFollow = (function () {
             changed = true;
             var reason;
             if (beta.length === 0) {
-              reason = grammar.productionToString(prod) + ' 中 ' + B + ' 后无符号，FOLLOW(' + A + ') ⊆ FOLLOW(' + B + ')';
+              reason =
+                grammar.productionToString(prod) +
+                " 中 " +
+                B +
+                " 后无符号，FOLLOW(" +
+                A +
+                ") ⊆ FOLLOW(" +
+                B +
+                ")";
             } else if (betaFirst.has(Grammar.EPSILON)) {
-              reason = grammar.productionToString(prod) + ' 中 FIRST(' + beta.join(' ') + ') 含 ε，FOLLOW(' + A + ') ⊆ FOLLOW(' + B + ')';
+              reason =
+                grammar.productionToString(prod) +
+                " 中 FIRST(" +
+                beta.join(" ") +
+                ") 含 ε，FOLLOW(" +
+                A +
+                ") ⊆ FOLLOW(" +
+                B +
+                ")";
             } else {
-              reason = grammar.productionToString(prod) + ' 中 FIRST(' + beta.join(' ') + ') \\ {ε} ⊆ FOLLOW(' + B + ')';
+              reason =
+                grammar.productionToString(prod) +
+                " 中 FIRST(" +
+                beta.join(" ") +
+                ") \\ {ε} ⊆ FOLLOW(" +
+                B +
+                ")";
             }
             roundChanges.push({
               production: prod,
               nonTerminal: B,
               reason: reason,
               added: Array.from(added),
-              currentFollow: Array.from(follow[B])
+              currentFollow: Array.from(follow[B]),
             });
           }
         }
@@ -183,7 +207,7 @@ var FirstFollow = (function () {
         steps.push({
           round: round,
           changes: roundChanges,
-          snapshot: deepCopyFollow(follow, grammar)
+          snapshot: deepCopyFollow(follow, grammar),
         });
       }
     }
@@ -210,6 +234,6 @@ var FirstFollow = (function () {
   return {
     computeFirst: computeFirst,
     computeFollow: computeFollow,
-    firstOfString: firstOfString
+    firstOfString: firstOfString,
   };
 })();

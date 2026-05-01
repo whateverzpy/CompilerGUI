@@ -11,7 +11,7 @@
 - **文法解析** - 支持标准产生式格式输入
 - **FIRST 集计算** - 逐步展示迭代过程
 - **FOLLOW 集计算** - 详细展示推导规则
-- **LL(1) 分析表** - 可视化表格展示，冲突高亮
+- **LL(1) 分析表** - 可视化表格展示，点击单元格查看填表依据
 - **预测分析模拟** - 自动/单步执行模式
 - **语法树可视化** - 交互式语法树绘制
 
@@ -27,21 +27,26 @@
 
 ## 快速开始
 
-### 方式一：直接打开
-
-由于项目纯前端实现，直接在浏览器中打开 `index.html` 即可运行。
-
-### 方式二：本地服务器
+### 安装依赖
 
 ```bash
-# 使用 Python
-python -m http.server 8080
+npm install
+```
 
+### 构建 CSS
+
+```bash
+npm run build
+```
+
+### 运行项目
+
+```bash
 # 使用 Node.js
 npx http-server -p 8080
 
-# 使用 PHP
-php -S localhost:8080
+# 或使用 Python
+python -m http.server 8080
 ```
 
 然后访问 http://localhost:8080
@@ -70,22 +75,31 @@ F -> ( E ) | id
 3. **查看步骤** - 依次展开 FIRST 集、FOLLOW 集、分析表
 4. **模拟分析** - 输入测试串，观察预测分析过程
 
+### 分析表交互
+
+点击分析表中的任意非空单元格，可查看该格是依据哪条规则填入的：
+- **FIRST 规则**：a ∈ FIRST(α)，则 M[A, a] = A → α
+- **FOLLOW 规则**：ε ∈ FIRST(α) 且 b ∈ FOLLOW(A)，则 M[A, b] = A → α
+
 ### 示例文法
 
 项目内置三个示例文法，点击"示例文法"按钮循环切换：
 
 1. 经典表达式文法（含左递归消除）
 2. 简单 LL(1) 文法
-3. 含公共左因子的文法
+3. 非 LL(1) 文法（含冲突）
 
 ## 项目结构
 
 ```
 CompilerGUI/
 ├── index.html           # 主页面
+├── package.json         # 项目配置
+├── tailwind.config.js   # Tailwind 配置
 ├── README.md            # 项目说明
 ├── css/
-│   └── style.css        # 自定义样式
+│   ├── input.css        # 源样式文件
+│   └── output.css       # 构建输出（自动生成）
 └── js/
     ├── grammar.js       # 文法解析与数据结构
     ├── first-follow.js  # FIRST/FOLLOW 集算法
@@ -110,7 +124,7 @@ CompilerGUI/
 ### FOLLOW 集计算
 
 ```
-1. 将 $ 加入 FOLLOW(S)，S 为开始符号
+1. 将 # 加入 FOLLOW(S)，S 为开始符号
 2. 对每条产生式 A → αBβ:
    将 FIRST(β) \ {ε} 加入 FOLLOW(B)
 3. 对每条产生式 A → αB 或 A → αBβ (ε ∈ FIRST(β)):

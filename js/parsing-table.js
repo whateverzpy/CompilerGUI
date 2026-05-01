@@ -1,15 +1,17 @@
 var ParsingTable = (function () {
-
   function buildTable(grammar, first, follow) {
     var table = {};
+    var tableInfo = {};
     var conflicts = [];
     var terminals = grammar.terminals.slice();
     terminals.push(Grammar.END_MARKER);
 
     grammar.nonTerminals.forEach(function (nt) {
       table[nt] = {};
+      tableInfo[nt] = {};
       terminals.forEach(function (t) {
         table[nt][t] = null;
+        tableInfo[nt][t] = null;
       });
     });
 
@@ -18,6 +20,7 @@ var ParsingTable = (function () {
       var alpha = prod.right;
 
       var alphaFirst = FirstFollow.firstOfString(alpha, first, grammar);
+      var alphaFirstArr = Array.from(alphaFirst);
 
       alphaFirst.forEach(function (terminal) {
         if (terminal !== Grammar.EPSILON) {
@@ -27,14 +30,24 @@ var ParsingTable = (function () {
               terminal: terminal,
               existing: table[A][terminal],
               conflict: prod,
-              type: 'FIRST/FIRST 冲突'
+              type: "FIRST/FIRST 冲突",
             });
           }
           table[A][terminal] = prod;
+          tableInfo[A][terminal] = {
+            production: prod,
+            ruleType: "FIRST",
+            reason: "FIRST(" + formatRhs(alpha) + ") = { " + alphaFirstArr.filter(function(s) { return s !== Grammar.EPSILON; }).join(", ") + " }",
+            detail: "由于 " + terminal + " ∈ FIRST(" + formatRhs(alpha) + ")，根据规则：对产生式 A → α，若 a ∈ FIRST(α) 且 a ≠ ε，则 M[A, a] = A → α",
+            firstSet: alphaFirstArr,
+            nonTerminal: A,
+            terminal: terminal
+          };
         }
       });
 
       if (alphaFirst.has(Grammar.EPSILON)) {
+        var followArr = Array.from(follow[A]);
         follow[A].forEach(function (terminal) {
           if (table[A][terminal] !== null) {
             conflicts.push({
@@ -42,52 +55,102 @@ var ParsingTable = (function () {
               terminal: terminal,
               existing: table[A][terminal],
               conflict: prod,
-              type: 'FIRST/FOLLOW 冲突'
+              type: "FIRST/FOLLOW 冲突",
             });
           }
           table[A][terminal] = prod;
+          tableInfo[A][terminal] = {
+            production: prod,
+            ruleType: "FOLLOW",
+            reason: "ε ∈ FIRST(" + formatRhs(alpha) + ") 且 " + terminal + " ∈ FOLLOW(" + A + ")",
+            detail: "由于 ε ∈ FIRST(" + formatRhs(alpha) + ")，且 " + terminal + " ∈ FOLLOW(" + A + ")，根据规则：若 ε ∈ FIRST(α)，则对每个 b ∈ FOLLOW(A)，M[A, b] = A → α",
+            firstSet: alphaFirstArr,
+            followSet: followArr,
+            nonTerminal: A,
+            terminal: terminal
+          };
         });
       }
     });
 
     return {
       table: table,
+      tableInfo: tableInfo,
       terminals: terminals,
       conflicts: conflicts,
-      isLL1: conflicts.length === 0
+      isLL1: conflicts.length === 0,
     };
+  }
+
+  function formatRhs(rhs) {
+    if (rhs.length === 1 && rhs[0] === Grammar.EPSILON) {
+      return Grammar.EPSILON;
+    }
+    return rhs.join(" ");
   }
 
   function simulateParse(grammar, table, inputStr) {
     var tokens = inputStr.trim().split(/\s+/);
     tokens.push(Grammar.END_MARKER);
 
-    var stack = [Grammar.END_MARKER, grammar.startSymbol];
+    var allTreeNodes = [];
+    var allTreeEdges = [];
+    var nodeId = 0;
     var steps = [];
     var stepNum = 0;
     var maxSteps = 500;
-    var treeNodes = [];
-    var treeEdges = [];
-    var nodeId = 0;
-    var parentNodeStack = [];
 
-    var rootNodeId = nodeId++;
-    treeNodes.push({ id: rootNodeId, label: grammar.startSymbol, shape: 'box', color: { background: '#6366f1', border: '#4f46e5', font: { color: '#fff' } } });
-    parentNodeStack.push({ symbol: grammar.startSymbol, nodeId: rootNodeId, childIndex: 0 });
+    var rootId = nodeId++;
+    var rootNode = {
+      id: rootId,
+      label: grammar.startSymbol,
+      shape: "box",
+      color: { background: "#6366f1", border: "#4f46e5" },
+      font: { color: "#fff", size: 16, face: "monospace" },
+    };
+    allTreeNodes.push(rootNode);
+
+    var stack = [];
+    stack.push({ symbol: Grammar.END_MARKER, nodeId: null });
+    stack.push({ symbol: grammar.startSymbol, nodeId: rootId });
+
+    steps.push({
+      step: 0,
+      stack: grammar.startSymbol + " #",
+      input: tokens.join(" "),
+      action: "初始化",
+      production: null,
+      error: false,
+      accept: false,
+      newNodes: [rootNode],
+      newEdges: [],
+    });
 
     while (stack.length > 0 && stepNum < maxSteps) {
       var top = stack[stack.length - 1];
+      var topSymbol = top.symbol;
+      var topNodeId = top.nodeId;
       var currentInput = tokens[0] || Grammar.END_MARKER;
 
       stepNum++;
-      var stackStr = stack.slice().reverse().join(' ');
-      var inputStr2 = tokens.join(' ');
-      var action = '';
+      var stackSymbols = [];
+      for (var i = stack.length - 1; i >= 0; i--) {
+        stackSymbols.push(stack[i].symbol);
+      }
+      var stackStr = stackSymbols.join(" ");
+      var inputStr2 = tokens.join(" ");
+      var action = "";
+      var prod = null;
       var error = false;
       var accept = false;
+      var newNodes = [];
+      var newEdges = [];
 
-      if (top === Grammar.END_MARKER && currentInput === Grammar.END_MARKER) {
-        action = '接受';
+      if (
+        topSymbol === Grammar.END_MARKER &&
+        currentInput === Grammar.END_MARKER
+      ) {
+        action = "接受";
         accept = true;
         steps.push({
           step: stepNum,
@@ -96,26 +159,21 @@ var ParsingTable = (function () {
           action: action,
           production: null,
           error: false,
-          accept: true
+          accept: true,
+          newNodes: newNodes,
+          newEdges: newEdges,
         });
         break;
       }
 
-      if (grammar.isTerminal(top) || top === Grammar.END_MARKER) {
-        if (top === currentInput) {
-          action = '匹配 ' + top;
+      if (grammar.isTerminal(topSymbol)) {
+        if (topSymbol === currentInput) {
+          action = "匹配 " + topSymbol;
           stack.pop();
           tokens.shift();
-
-          if (parentNodeStack.length > 0) {
-            var pns = parentNodeStack[parentNodeStack.length - 1];
-            var leafId = nodeId++;
-            treeNodes.push({ id: leafId, label: top, shape: 'box', color: { background: '#10b981', border: '#059669', font: { color: '#fff' } }, font: { size: 12 } });
-            treeEdges.push({ from: pns.nodeId, to: leafId });
-            pns.childIndex++;
-          }
         } else {
-          action = '错误: 栈顶 ' + top + ' 与输入 ' + currentInput + ' 不匹配';
+          action =
+            "错误: 栈顶 " + topSymbol + " 与输入 " + currentInput + " 不匹配";
           error = true;
           steps.push({
             step: stepNum,
@@ -124,53 +182,68 @@ var ParsingTable = (function () {
             action: action,
             production: null,
             error: true,
-            accept: false
+            accept: false,
+            newNodes: newNodes,
+            newEdges: newEdges,
           });
           break;
         }
-      } else if (grammar.isNonTerminal(top)) {
-        var prod = null;
-        if (table[top] && table[top][currentInput]) {
-          prod = table[top][currentInput];
-        }
+      } else if (grammar.isNonTerminal(topSymbol)) {
+        prod = table[topSymbol] && table[topSymbol][currentInput];
 
         if (prod) {
           stack.pop();
 
-          var pns = parentNodeStack.pop();
-          var rhsDisplay = prod.right.join(' ');
+          var rhsDisplay = prod.right.join(" ");
           if (rhsDisplay === Grammar.EPSILON) rhsDisplay = Grammar.EPSILON;
-          action = top + ' → ' + rhsDisplay;
+          action = topSymbol + " → " + rhsDisplay;
 
           if (prod.right.length === 1 && prod.right[0] === Grammar.EPSILON) {
             var epsId = nodeId++;
-            treeNodes.push({ id: epsId, label: Grammar.EPSILON, shape: 'box', color: { background: '#f59e0b', border: '#d97706', font: { color: '#fff' } }, font: { size: 11 } });
-            treeEdges.push({ from: pns.nodeId, to: epsId });
+            var epsNode = {
+              id: epsId,
+              label: Grammar.EPSILON,
+              shape: "box",
+              color: { background: "#f59e0b", border: "#d97706" },
+              font: { color: "#fff", size: 14, face: "monospace" },
+            };
+            allTreeNodes.push(epsNode);
+            newNodes.push(epsNode);
+            var epsEdge = { from: topNodeId, to: epsId };
+            allTreeEdges.push(epsEdge);
+            newEdges.push(epsEdge);
           } else {
-            var childEntries = [];
-            for (var ci = prod.right.length - 1; ci >= 0; ci--) {
-              var childSym = prod.right[ci];
+            var childrenToPush = [];
+            for (var i = 0; i < prod.right.length; i++) {
+              var childSym = prod.right[i];
               var childId = nodeId++;
               var isNT = grammar.isNonTerminal(childSym);
-              treeNodes.push({
+              var childNode = {
                 id: childId,
                 label: childSym,
-                shape: 'box',
+                shape: "box",
                 color: isNT
-                  ? { background: '#6366f1', border: '#4f46e5', font: { color: '#fff' } }
-                  : { background: '#10b981', border: '#059669', font: { color: '#fff' } },
-                font: { size: isNT ? 14 : 12 }
-              });
-              treeEdges.push({ from: pns.nodeId, to: childId });
-              stack.push(childSym);
-              childEntries.push({ symbol: childSym, nodeId: childId, childIndex: 0 });
+                  ? { background: "#6366f1", border: "#4f46e5" }
+                  : { background: "#10b981", border: "#059669" },
+                font: {
+                  color: "#fff",
+                  size: isNT ? 16 : 14,
+                  face: "monospace",
+                },
+              };
+              allTreeNodes.push(childNode);
+              newNodes.push(childNode);
+              var childEdge = { from: topNodeId, to: childId };
+              allTreeEdges.push(childEdge);
+              newEdges.push(childEdge);
+              childrenToPush.push({ symbol: childSym, nodeId: childId });
             }
-            for (var ci = childEntries.length - 1; ci >= 0; ci--) {
-              parentNodeStack.push(childEntries[ci]);
+            for (var i = childrenToPush.length - 1; i >= 0; i--) {
+              stack.push(childrenToPush[i]);
             }
           }
         } else {
-          action = '错误: M[' + top + ', ' + currentInput + '] 为空';
+          action = "错误: M[" + topSymbol + ", " + currentInput + "] 为空";
           error = true;
           steps.push({
             step: stepNum,
@@ -179,7 +252,9 @@ var ParsingTable = (function () {
             action: action,
             production: null,
             error: true,
-            accept: false
+            accept: false,
+            newNodes: newNodes,
+            newEdges: newEdges,
           });
           break;
         }
@@ -192,20 +267,22 @@ var ParsingTable = (function () {
         action: action,
         production: prod,
         error: false,
-        accept: false
+        accept: false,
+        newNodes: newNodes,
+        newEdges: newEdges,
       });
     }
 
     return {
       steps: steps,
-      treeNodes: treeNodes,
-      treeEdges: treeEdges,
-      success: steps.length > 0 && steps[steps.length - 1].accept === true
+      treeNodes: allTreeNodes,
+      treeEdges: allTreeEdges,
+      success: steps.length > 0 && steps[steps.length - 1].accept === true,
     };
   }
 
   return {
     buildTable: buildTable,
-    simulateParse: simulateParse
+    simulateParse: simulateParse,
   };
 })();

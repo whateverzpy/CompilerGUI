@@ -7,8 +7,8 @@ var Grammar = (function () {
     this.symbols = [];
   }
 
-  Grammar.EPSILON = 'ε';
-  Grammar.END_MARKER = '$';
+  Grammar.EPSILON = "ε";
+  Grammar.END_MARKER = "#";
 
   Grammar.prototype.parse = function (text) {
     this.productions = [];
@@ -17,7 +17,7 @@ var Grammar = (function () {
     this.startSymbol = null;
     this.symbols = [];
 
-    var lines = text.trim().split('\n');
+    var lines = text.trim().split("\n");
     var nonTerminalSet = new Set();
     var terminalSet = new Set();
     var productionList = [];
@@ -28,28 +28,34 @@ var Grammar = (function () {
 
       var parts = line.split(/->|→/);
       if (parts.length < 2) {
-        throw new Error('第 ' + (i + 1) + ' 行格式错误: "' + line + '"\n请使用 A -> α 格式');
+        throw new Error(
+          "第 " + (i + 1) + ' 行格式错误: "' + line + '"\n请使用 A -> α 格式',
+        );
       }
 
       var left = parts[0].trim();
       if (!left) {
-        throw new Error('第 ' + (i + 1) + ' 行: 产生式左部为空');
+        throw new Error("第 " + (i + 1) + " 行: 产生式左部为空");
       }
 
       nonTerminalSet.add(left);
 
-      var rightPart = parts.slice(1).join('->').trim();
-      var alternatives = rightPart.split('|');
+      var rightPart = parts.slice(1).join("->").trim();
+      var alternatives = rightPart.split("|");
 
       for (var j = 0; j < alternatives.length; j++) {
         var alt = alternatives[j].trim();
         var symbols = alt ? alt.split(/\s+/) : [Grammar.EPSILON];
-        productionList.push({ left: left, right: symbols, index: productionList.length });
+        productionList.push({
+          left: left,
+          right: symbols,
+          index: productionList.length,
+        });
       }
     }
 
     if (productionList.length === 0) {
-      throw new Error('未输入任何产生式');
+      throw new Error("未输入任何产生式");
     }
 
     this.startSymbol = productionList[0].left;
@@ -95,33 +101,37 @@ var Grammar = (function () {
   };
 
   Grammar.prototype.productionToString = function (prod) {
-    var right = prod.right.join(' ');
+    var right = prod.right.join(" ");
     if (right === Grammar.EPSILON) right = Grammar.EPSILON;
-    return prod.left + ' → ' + right;
+    return prod.left + " → " + right;
   };
 
   Grammar.prototype.formatSymbol = function (sym) {
     if (this.isNonTerminal(sym)) {
-      return '<span class="nonterminal">' + escapeHtml(sym) + '</span>';
+      return '<span class="nonterminal">' + escapeHtml(sym) + "</span>";
     } else if (sym === Grammar.EPSILON) {
-      return '<span class="epsilon">' + Grammar.EPSILON + '</span>';
+      return '<span class="epsilon">' + Grammar.EPSILON + "</span>";
     } else if (sym === Grammar.END_MARKER) {
-      return '<span class="terminal">' + escapeHtml(sym) + '</span>';
+      return '<span class="terminal">' + escapeHtml(sym) + "</span>";
     } else {
-      return '<span class="terminal">' + escapeHtml(sym) + '</span>';
+      return '<span class="terminal">' + escapeHtml(sym) + "</span>";
     }
   };
 
   Grammar.prototype.formatProduction = function (prod) {
     var left = this.formatSymbol(prod.left);
-    var rightParts = prod.right.map(function (s) {
-      return this.formatSymbol(s);
-    }.bind(this));
-    return left + ' <span class="production-arrow">→</span> ' + rightParts.join(' ');
+    var rightParts = prod.right.map(
+      function (s) {
+        return this.formatSymbol(s);
+      }.bind(this),
+    );
+    return (
+      left + ' <span class="production-arrow">→</span> ' + rightParts.join(" ")
+    );
   };
 
   function escapeHtml(text) {
-    var div = document.createElement('div');
+    var div = document.createElement("div");
     div.appendChild(document.createTextNode(text));
     return div.innerHTML;
   }
