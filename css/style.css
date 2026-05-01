@@ -1,0 +1,102 @@
+.step-highlight {
+  animation: stepPulse 0.6s ease-out;
+}
+
+@keyframes stepPulse {
+  0% { background-color: hsl(var(--p) / 0.3); }
+  100% { background-color: transparent; }
+}
+
+.set-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: 0.375rem;
+  font-size: 0.8rem;
+  font-family: monospace;
+  margin: 0.1rem;
+}
+
+.set-tag-new {
+  background-color: hsl(var(--s) / 0.2);
+  border: 1px solid hsl(var(--s) / 0.5);
+  color: hsl(var(--s));
+}
+
+.set-tag-old {
+  background-color: hsl(var(--b1) / 0.5);
+  border: 1px solid hsl(var(--bc) / 0.2);
+  color: hsl(var(--bc) / 0.6);
+}
+
+.production-rule {
+  font-family: monospace;
+  font-size: 0.9rem;
+}
+
+.production-arrow {
+  color: hsl(var(--p));
+  font-weight: bold;
+  margin: 0 0.25rem;
+}
+
+.terminal {
+  color: hsl(var(--s));
+  font-weight: 600;
+}
+
+.nonterminal {
+  color: hsl(var(--p));
+  font-weight: 600;
+}
+
+.epsilon {
+  color: hsl(var(--a));
+  font-style: italic;
+}
+
+.table-cell-production {
+  font-family: monospace;
+  font-size: 0.8rem;
+}
+
+.table-cell-conflict {
+  background-color: hsl(var(--er) / 0.15) !important;
+  border: 1px solid hsl(var(--er) / 0.5) !important;
+}
+
+#parseTree {
+  min-height: 300px;
+  background: hsl(var(--b2));
+}
+
+.parse-step-current {
+  background-color: hsl(var(--p) / 0.15) !important;
+}
+
+.parse-step-done {
+  opacity: 0.6;
+}
+
+.card.collapse .collapse-content {
+  overflow: visible;
+}
+
+.overflow-x-auto::-webkit-scrollbar {
+  height: 6px;
+}
+
+.overflow-x-auto::-webkit-scrollbar-track {
+  background: hsl(var(--b2));
+  border-radius: 3px;
+}
+
+.overflow-x-auto::-webkit-scrollbar-thumb {
+  background: hsl(var(--bc) / 0.3);
+  border-radius: 3px;
+}
+
+.overflow-x-auto::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--bc) / 0.5);
+}
