@@ -15,7 +15,7 @@ export const Button = ({
 }: ButtonProps) => (
   <button
     className={classNames(
-      'inline-flex h-9 items-center justify-center gap-2 rounded-md border px-3 text-sm font-medium transition-colors focus:outline-none focus-visible:shadow-focus disabled:cursor-not-allowed disabled:opacity-40',
+      'inline-flex h-9 shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-md border px-3 text-sm font-medium transition-colors focus:outline-none focus-visible:shadow-focus disabled:cursor-not-allowed disabled:opacity-40',
       variant === 'primary' &&
         'border-ink-950 bg-ink-950 text-white hover:bg-ink-800',
       variant === 'secondary' &&
