@@ -88,6 +88,17 @@ export interface LR1Conflict {
   entries: LR1TableEntry[];
 }
 
+export interface LR1ParseStep {
+  index: number;
+  stateStack: number[];
+  symbolStack: string[];
+  input: string[];
+  action: LR1ActionKind | 'goto' | 'error';
+  tableEntry?: LR1TableEntry;
+  production?: Production;
+  message: string;
+}
+
 export interface LR1Analysis {
   originalGrammar: Grammar;
   grammar: Grammar;
@@ -615,6 +626,119 @@ export const buildLR1CanonicalCollection = (originalGrammar: Grammar): LR1Analys
     ...partialAnalysis,
     ...table,
   };
+};
+
+const normalizeInput = (input: string) => {
+  const tokens = input.trim().split(/\s+/).filter(Boolean);
+  return tokens[tokens.length - 1] === EOF_SYMBOL ? tokens : [...tokens, EOF_SYMBOL];
+};
+
+export const runLR1Parser = (analysis: LR1Analysis, rawInput: string) => {
+  const inputTokens = normalizeInput(rawInput);
+  const stateStack = [0];
+  const symbolStack = [EOF_SYMBOL];
+  const steps: LR1ParseStep[] = [];
+  let cursor = 0;
+  let guard = 0;
+
+  while (guard < 300) {
+    guard += 1;
+    const state = stateStack[stateStack.length - 1];
+    const lookahead = inputTokens[cursor] ?? EOF_SYMBOL;
+    const snapshot = {
+      stateStack: [...stateStack],
+      symbolStack: [...symbolStack],
+      input: inputTokens.slice(cursor),
+    };
+    const entries = analysis.actionTable[state]?.[lookahead] ?? [];
+
+    if (entries.length !== 1) {
+      steps.push({
+        index: steps.length + 1,
+        ...snapshot,
+        action: 'error',
+        message:
+          entries.length > 1
+            ? `ACTION[${state}, ${lookahead}] 存在冲突，无法唯一选择动作。`
+            : `ACTION[${state}, ${lookahead}] 为空，分析失败。`,
+      });
+      break;
+    }
+
+    const entry = entries[0];
+
+    if (entry.action === 'shift') {
+      symbolStack.push(lookahead);
+      stateStack.push(entry.targetState!);
+      cursor += 1;
+      steps.push({
+        index: steps.length + 1,
+        ...snapshot,
+        action: 'shift',
+        tableEntry: entry,
+        message: `ACTION[${state}, ${lookahead}] = s${entry.targetState}，移进 ${lookahead}。`,
+      });
+      continue;
+    }
+
+    if (entry.action === 'accept') {
+      steps.push({
+        index: steps.length + 1,
+        ...snapshot,
+        action: 'accept',
+        tableEntry: entry,
+        message: 'ACTION 表给出 acc，分析成功。',
+      });
+      break;
+    }
+
+    const production = entry.production!;
+    for (let index = 0; index < production.rhs.length; index += 1) {
+      symbolStack.pop();
+      stateStack.pop();
+    }
+
+    const gotoState = stateStack[stateStack.length - 1];
+    const gotoEntries = analysis.gotoTable[gotoState]?.[production.lhs] ?? [];
+    if (gotoEntries.length !== 1) {
+      steps.push({
+        index: steps.length + 1,
+        ...snapshot,
+        action: 'error',
+        tableEntry: entry,
+        production,
+        message:
+          gotoEntries.length > 1
+            ? `按 ${production.display} 归约后，GOTO[${gotoState}, ${production.lhs}] 存在冲突。`
+            : `按 ${production.display} 归约后，GOTO[${gotoState}, ${production.lhs}] 为空。`,
+      });
+      break;
+    }
+
+    symbolStack.push(production.lhs);
+    stateStack.push(gotoEntries[0].targetState!);
+    steps.push({
+      index: steps.length + 1,
+      ...snapshot,
+      action: 'reduce',
+      tableEntry: entry,
+      production,
+      message: `ACTION[${state}, ${lookahead}] = r${productionNumber(production)}，按 ${production.display} 归约，转到 I${gotoEntries[0].targetState}。`,
+    });
+  }
+
+  if (guard >= 300) {
+    steps.push({
+      index: steps.length + 1,
+      stateStack: [...stateStack],
+      symbolStack: [...symbolStack],
+      input: inputTokens.slice(cursor),
+      action: 'error',
+      message: '分析步骤超过上限，可能存在异常循环。',
+    });
+  }
+
+  return { inputTokens, parseSteps: steps };
 };
 
 export const analyzeLR1Source = (source: string): LR1Result => {

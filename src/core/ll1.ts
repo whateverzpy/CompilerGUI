@@ -56,8 +56,6 @@ export interface LL1Analysis {
   table: Record<string, Record<string, LL1TableEntry[]>>;
   constructionSteps: LL1ConstructionStep[];
   conflicts: LL1Conflict[];
-  inputTokens: string[];
-  parseSteps: LL1ParseStep[];
 }
 
 export interface LL1Result {
@@ -260,21 +258,19 @@ export const runLL1Parser = (
   return { inputTokens, parseSteps: steps };
 };
 
-export const analyzeLL1Source = (grammarSource: string, input: string): LL1Result => {
+export const analyzeLL1Source = (grammarSource: string): LL1Result => {
   const grammarResult = analyzeGrammarSource(grammarSource);
   if (!grammarResult.analysis) {
     return { errors: grammarResult.errors };
   }
 
   const tableResult = buildLL1Table(grammarResult.analysis);
-  const parseResult = runLL1Parser(grammarResult.analysis, tableResult.table, input);
 
   return {
     errors: [],
     analysis: {
       grammarAnalysis: grammarResult.analysis,
       ...tableResult,
-      ...parseResult,
     },
   };
 };

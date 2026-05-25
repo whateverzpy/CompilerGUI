@@ -15,19 +15,26 @@ import { Button } from '../../components/Button';
 import { EOF_SYMBOL, type GrammarError } from '../../core/grammar';
 import {
   analyzeLR1Source,
+  runLR1Parser,
   type LR1Analysis,
   type LR1ConstructionStep,
   type LR1ItemView,
+  type LR1ParseStep,
   type LR1TableEntry,
 } from '../../core/lr1';
 import { classNames } from '../../lib/classNames';
-import { sampleLR1Grammar } from './sample';
+import { sampleLR1Grammar, sampleLR1Input } from './sample';
 
 interface LR1PageProps {
   onBack: () => void;
 }
 
 type LR1ViewMode = 'result' | 'steps';
+
+interface LR1ParseResult {
+  inputTokens: string[];
+  parseSteps: LR1ParseStep[];
+}
 
 const visibleStates = (analysis: LR1Analysis, step: LR1ConstructionStep) =>
   analysis.states.slice(0, step.visibleStateCount);
@@ -43,6 +50,8 @@ export const LR1Page = ({ onBack }: LR1PageProps) => {
   const [grammarText, setGrammarText] = useState(sampleLR1Grammar);
   const [analysis, setAnalysis] = useState(initialResult.analysis);
   const [errors, setErrors] = useState<GrammarError[]>(initialResult.errors);
+  const [inputText, setInputText] = useState('');
+  const [parseResult, setParseResult] = useState<LR1ParseResult | undefined>();
   const [stepIndex, setStepIndex] = useState(0);
   const [viewMode, setViewMode] = useState<LR1ViewMode>('result');
   const step = analysis?.constructionSteps[stepIndex];
@@ -58,6 +67,7 @@ export const LR1Page = ({ onBack }: LR1PageProps) => {
     const result = analyzeLR1Source(grammarText);
     setAnalysis(result.analysis);
     setErrors(result.errors);
+    setParseResult(undefined);
     setStepIndex(0);
     if (result.analysis) {
       setViewMode('result');
@@ -69,6 +79,8 @@ export const LR1Page = ({ onBack }: LR1PageProps) => {
     setGrammarText(sampleLR1Grammar);
     setAnalysis(result.analysis);
     setErrors(result.errors);
+    setInputText('');
+    setParseResult(undefined);
     setStepIndex(0);
     setViewMode('result');
   };
@@ -79,6 +91,19 @@ export const LR1Page = ({ onBack }: LR1PageProps) => {
       return;
     }
     setStepIndex((current) => Math.min(current + 1, analysis.constructionSteps.length - 1));
+  };
+
+  const runInputAnalysis = () => {
+    const result = analyzeLR1Source(grammarText);
+    setAnalysis(result.analysis);
+    setErrors(result.errors);
+    setStepIndex(0);
+    if (result.analysis) {
+      setViewMode('result');
+      setParseResult(inputText.trim() ? runLR1Parser(result.analysis, inputText) : undefined);
+    } else {
+      setParseResult(undefined);
+    }
   };
 
   return (
@@ -97,11 +122,25 @@ export const LR1Page = ({ onBack }: LR1PageProps) => {
 
         <div className="flex min-h-0 flex-1 flex-col gap-4 p-5">
           <textarea
-            className="min-h-[360px] flex-1 resize-none rounded-md border border-neutral-300 bg-neutral-50 p-4 font-mono text-sm leading-6 text-ink-950 outline-none focus:border-ink-950 focus:bg-white focus:shadow-focus"
+            className="min-h-[280px] flex-1 resize-none rounded-md border border-neutral-300 bg-neutral-50 p-4 font-mono text-sm leading-6 text-ink-950 outline-none focus:border-ink-950 focus:bg-white focus:shadow-focus"
             spellCheck={false}
             value={grammarText}
             onChange={(event) => setGrammarText(event.target.value)}
           />
+
+          <label className="flex flex-col gap-2">
+            <span className="text-xs font-semibold text-ink-600">输入串</span>
+            <input
+              className="h-10 rounded-md border border-neutral-300 bg-neutral-50 px-3 font-mono text-sm text-ink-950 outline-none focus:border-ink-950 focus:bg-white focus:shadow-focus"
+              value={inputText}
+              onChange={(event) => setInputText(event.target.value)}
+              placeholder={`输入后点击分析：${sampleLR1Input}，可省略结尾 ${EOF_SYMBOL}`}
+            />
+          </label>
+
+          <Button icon={<Wand2 size={15} />} onClick={runInputAnalysis} disabled={!inputText.trim()}>
+            分析输入串
+          </Button>
 
           {errors.length > 0 && (
             <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-900">
@@ -164,7 +203,7 @@ export const LR1Page = ({ onBack }: LR1PageProps) => {
         {analysis && step ? (
           <div className="grid gap-4">
             {viewMode === 'result' ? (
-              <LR1FinalResult analysis={analysis} />
+              <LR1FinalResult analysis={analysis} parseResult={parseResult} />
             ) : (
               <>
                 <NumberedGrammar analysis={analysis} />
@@ -199,7 +238,13 @@ export const LR1Page = ({ onBack }: LR1PageProps) => {
   );
 };
 
-const LR1FinalResult = ({ analysis }: { analysis: LR1Analysis }) => (
+const LR1FinalResult = ({
+  analysis,
+  parseResult,
+}: {
+  analysis: LR1Analysis;
+  parseResult?: LR1ParseResult;
+}) => (
   <div className="grid gap-4">
     <section className="rounded-md border border-neutral-200 bg-white">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-neutral-200 px-5 py-4">
@@ -226,6 +271,7 @@ const LR1FinalResult = ({ analysis }: { analysis: LR1Analysis }) => (
     <LR1DfaGraph title="识别活前缀的完整 DFA" analysis={analysis} states={analysis.states} transitions={analysis.transitions} />
     <ItemSetGrid states={analysis.states} />
     <LR1TableView analysis={analysis} entries={analysis.tableEntries} />
+    {parseResult && <LRParseProcess parseResult={parseResult} />}
   </div>
 );
 
@@ -528,6 +574,44 @@ const TableEntryCards = ({ entries }: { entries: LR1TableEntry[] }) => (
   </div>
 );
 
+const LRParseProcess = ({ parseResult }: { parseResult: LR1ParseResult }) => (
+  <section className="overflow-hidden rounded-md border border-neutral-200 bg-white">
+    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-neutral-200 px-4 py-3">
+      <div>
+        <h2 className="text-sm font-semibold text-ink-950">输入串语法分析过程</h2>
+        <p className="mt-1 text-xs text-ink-600">输入：<span className="font-mono">{parseResult.inputTokens.join(' ')}</span></p>
+      </div>
+      <span className="rounded border border-neutral-200 bg-neutral-50 px-2 py-1 text-xs text-ink-600">{parseResult.parseSteps.length} 步</span>
+    </div>
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[860px] border-collapse text-sm">
+        <thead>
+          <tr className="bg-neutral-50">
+            <th className="border-b border-r border-neutral-200 px-3 py-3 font-semibold text-ink-600">步</th>
+            <th className="border-b border-r border-neutral-200 px-3 py-3 font-semibold text-ink-600">状态栈</th>
+            <th className="border-b border-r border-neutral-200 px-3 py-3 font-semibold text-ink-600">符号栈</th>
+            <th className="border-b border-r border-neutral-200 px-3 py-3 font-semibold text-ink-600">剩余输入</th>
+            <th className="border-b border-r border-neutral-200 px-3 py-3 font-semibold text-ink-600">动作</th>
+            <th className="border-b border-neutral-200 px-3 py-3 font-semibold text-ink-600">说明</th>
+          </tr>
+        </thead>
+        <tbody>
+          {parseResult.parseSteps.map((step) => (
+            <tr key={step.index} className={step.action === 'error' ? 'bg-red-50' : undefined}>
+              <td className="border-b border-r border-neutral-200 px-3 py-3 font-mono text-xs text-ink-400">{step.index}</td>
+              <td className="border-b border-r border-neutral-200 px-3 py-3 font-mono text-xs text-ink-950">{step.stateStack.join(' ')}</td>
+              <td className="border-b border-r border-neutral-200 px-3 py-3 font-mono text-xs text-ink-950">{step.symbolStack.join(' ')}</td>
+              <td className="border-b border-r border-neutral-200 px-3 py-3 font-mono text-xs text-ink-950">{step.input.join(' ')}</td>
+              <td className="border-b border-r border-neutral-200 px-3 py-3"><span className="rounded border border-neutral-200 bg-neutral-50 px-2 py-1 text-xs text-ink-600">{actionLabel(step.action)}</span></td>
+              <td className="border-b border-neutral-200 px-3 py-3 text-ink-600">{step.message}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  </section>
+);
+
 const formatTableEntry = (entry: LR1TableEntry) => {
   if (entry.action === 'shift') {
     return `s${entry.targetState}`;
@@ -544,6 +628,19 @@ const formatTableEntry = (entry: LR1TableEntry) => {
 const productionNumber = (productionId: string) => productionId.replace(/^p/, '');
 
 const productionLabel = (production: { id: string }) => `(${productionNumber(production.id)})`;
+
+const actionLabel = (action: LR1ParseStep['action']) => {
+  if (action === 'shift') {
+    return '移进';
+  }
+  if (action === 'reduce') {
+    return '归约';
+  }
+  if (action === 'accept') {
+    return '接受';
+  }
+  return '错误';
+};
 
 const StepTimeline = ({ steps, currentIndex, onSelect }: { steps: LR1ConstructionStep[]; currentIndex: number; onSelect: (index: number) => void }) => (
   <aside className="hidden min-h-0 flex-col border-l border-neutral-200 bg-white xl:flex">

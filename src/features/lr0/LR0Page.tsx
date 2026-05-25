@@ -7,25 +7,34 @@ import {
   GitBranch,
   ListChecks,
   RotateCcw,
+  Table2,
   Wand2,
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Button } from '../../components/Button';
-import { type GrammarError } from '../../core/grammar';
+import { EOF_SYMBOL, type GrammarError } from '../../core/grammar';
 import {
   analyzeLR0Source,
+  runLR0Parser,
   type LR0Analysis,
   type LR0ConstructionStep,
   type LR0ItemView,
+  type LR0ParseStep,
+  type LR0TableEntry,
 } from '../../core/lr0';
 import { classNames } from '../../lib/classNames';
-import { sampleLR0Grammar } from './sample';
+import { sampleLR0Grammar, sampleLR0Input } from './sample';
 
 interface LR0PageProps {
   onBack: () => void;
 }
 
 type LR0ViewMode = 'result' | 'steps';
+
+interface LR0ParseResult {
+  inputTokens: string[];
+  parseSteps: LR0ParseStep[];
+}
 
 const visibleStates = (analysis: LR0Analysis, step: LR0ConstructionStep) =>
   analysis.states.slice(0, step.visibleStateCount);
@@ -38,6 +47,8 @@ export const LR0Page = ({ onBack }: LR0PageProps) => {
   const [grammarText, setGrammarText] = useState(sampleLR0Grammar);
   const [analysis, setAnalysis] = useState(initialResult.analysis);
   const [errors, setErrors] = useState<GrammarError[]>(initialResult.errors);
+  const [inputText, setInputText] = useState('');
+  const [parseResult, setParseResult] = useState<LR0ParseResult | undefined>();
   const [stepIndex, setStepIndex] = useState(0);
   const [viewMode, setViewMode] = useState<LR0ViewMode>('result');
   const step = analysis?.constructionSteps[stepIndex];
@@ -53,6 +64,7 @@ export const LR0Page = ({ onBack }: LR0PageProps) => {
     const result = analyzeLR0Source(grammarText);
     setAnalysis(result.analysis);
     setErrors(result.errors);
+    setParseResult(undefined);
     setStepIndex(0);
     if (result.analysis) {
       setViewMode('result');
@@ -64,6 +76,8 @@ export const LR0Page = ({ onBack }: LR0PageProps) => {
     setGrammarText(sampleLR0Grammar);
     setAnalysis(result.analysis);
     setErrors(result.errors);
+    setInputText('');
+    setParseResult(undefined);
     setStepIndex(0);
     setViewMode('result');
   };
@@ -74,6 +88,19 @@ export const LR0Page = ({ onBack }: LR0PageProps) => {
       return;
     }
     setStepIndex((current) => Math.min(current + 1, analysis.constructionSteps.length - 1));
+  };
+
+  const runInputAnalysis = () => {
+    const result = analyzeLR0Source(grammarText);
+    setAnalysis(result.analysis);
+    setErrors(result.errors);
+    setStepIndex(0);
+    if (result.analysis) {
+      setViewMode('result');
+      setParseResult(inputText.trim() ? runLR0Parser(result.analysis, inputText) : undefined);
+    } else {
+      setParseResult(undefined);
+    }
   };
 
   return (
@@ -100,11 +127,25 @@ export const LR0Page = ({ onBack }: LR0PageProps) => {
 
         <div className="flex min-h-0 flex-1 flex-col gap-4 p-5">
           <textarea
-            className="min-h-[360px] flex-1 resize-none rounded-md border border-neutral-300 bg-neutral-50 p-4 font-mono text-sm leading-6 text-ink-950 outline-none focus:border-ink-950 focus:bg-white focus:shadow-focus"
+            className="min-h-[280px] flex-1 resize-none rounded-md border border-neutral-300 bg-neutral-50 p-4 font-mono text-sm leading-6 text-ink-950 outline-none focus:border-ink-950 focus:bg-white focus:shadow-focus"
             spellCheck={false}
             value={grammarText}
             onChange={(event) => setGrammarText(event.target.value)}
           />
+
+          <label className="flex flex-col gap-2">
+            <span className="text-xs font-semibold text-ink-600">输入串</span>
+            <input
+              className="h-10 rounded-md border border-neutral-300 bg-neutral-50 px-3 font-mono text-sm text-ink-950 outline-none focus:border-ink-950 focus:bg-white focus:shadow-focus"
+              value={inputText}
+              onChange={(event) => setInputText(event.target.value)}
+              placeholder={`输入后点击分析：${sampleLR0Input}，可省略结尾 ${EOF_SYMBOL}`}
+            />
+          </label>
+
+          <Button icon={<Wand2 size={15} />} onClick={runInputAnalysis} disabled={!inputText.trim()}>
+            分析输入串
+          </Button>
 
           {errors.length > 0 && (
             <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-900">
@@ -186,7 +227,7 @@ export const LR0Page = ({ onBack }: LR0PageProps) => {
         {analysis && step ? (
           <div className="grid gap-4">
             {viewMode === 'result' ? (
-              <LR0FinalResult analysis={analysis} />
+              <LR0FinalResult analysis={analysis} parseResult={parseResult} />
             ) : (
               <>
                 <ConstructionStepPanel step={step} />
@@ -223,7 +264,13 @@ export const LR0Page = ({ onBack }: LR0PageProps) => {
   );
 };
 
-const LR0FinalResult = ({ analysis }: { analysis: LR0Analysis }) => (
+const LR0FinalResult = ({
+  analysis,
+  parseResult,
+}: {
+  analysis: LR0Analysis;
+  parseResult?: LR0ParseResult;
+}) => (
   <div className="grid gap-4">
     <section className="rounded-md border border-neutral-200 bg-white">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-neutral-200 px-5 py-4">
@@ -261,9 +308,138 @@ const LR0FinalResult = ({ analysis }: { analysis: LR0Analysis }) => (
       states={analysis.states}
       transitions={analysis.transitions}
     />
+    <LR0TableView analysis={analysis} />
+    {analysis.conflicts.length > 0 && <ConflictNotice conflicts={analysis.conflicts} />}
+    {parseResult && <LRParseProcess parseResult={parseResult} />}
     <ItemSetGrid states={analysis.states} />
   </div>
 );
+
+const LR0TableView = ({ analysis }: { analysis: LR0Analysis }) => {
+  const actionSymbols = [...analysis.grammar.terminals, EOF_SYMBOL];
+  const gotoSymbols = analysis.originalGrammar.nonTerminals;
+  const actionAt = (state: number, symbol: string) => analysis.actionTable[state][symbol];
+  const gotoAt = (state: number, symbol: string) => analysis.gotoTable[state][symbol];
+
+  return (
+    <section className="overflow-hidden rounded-md border border-neutral-200 bg-white">
+      <div className="flex items-center gap-2 border-b border-neutral-200 px-4 py-3">
+        <Table2 size={16} />
+        <h3 className="text-sm font-semibold text-ink-950">LR(0) ACTION / GOTO 分析表</h3>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[860px] border-collapse text-sm">
+          <thead>
+            <tr className="bg-neutral-50">
+              <th className="border-b border-r border-neutral-200 px-3 py-3 text-ink-600" rowSpan={2}>状态</th>
+              <th className="border-b border-r border-neutral-200 px-3 py-3 text-center text-ink-600" colSpan={actionSymbols.length}>ACTION</th>
+              <th className="border-b border-neutral-200 px-3 py-3 text-center text-ink-600" colSpan={gotoSymbols.length}>GOTO</th>
+            </tr>
+            <tr className="bg-neutral-50">
+              {actionSymbols.map((symbol) => <th key={symbol} className="border-b border-r border-neutral-200 px-3 py-2 font-mono text-ink-950">{symbol}</th>)}
+              {gotoSymbols.map((symbol) => <th key={symbol} className="border-b border-r border-neutral-200 px-3 py-2 font-mono text-ink-950 last:border-r-0">{symbol}</th>)}
+            </tr>
+          </thead>
+          <tbody>
+            {analysis.states.map((state) => (
+              <tr key={state.id}>
+                <th className="border-b border-r border-neutral-200 bg-neutral-50 px-3 py-3 font-mono text-ink-950">{state.id}</th>
+                {actionSymbols.map((symbol) => <TableCell key={`${state.id}-a-${symbol}`} entries={actionAt(state.index, symbol)} />)}
+                {gotoSymbols.map((symbol) => <TableCell key={`${state.id}-g-${symbol}`} entries={gotoAt(state.index, symbol)} />)}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+};
+
+const TableCell = ({ entries }: { entries: LR0TableEntry[] }) => (
+  <td className={classNames('min-w-[88px] border-b border-r border-neutral-200 px-2 py-2 last:border-r-0', entries.length > 1 && 'bg-amber-50')}>
+    {entries.length === 0 ? (
+      <span className="font-mono text-xs text-ink-400">空</span>
+    ) : (
+      <div className="flex flex-col items-center gap-1">
+        {entries.map((entry) => (
+          <span key={entry.id} className="rounded border border-neutral-200 bg-white px-2 py-1 font-mono text-xs text-ink-950" title={entry.reason}>
+            {formatTableEntry(entry)}
+          </span>
+        ))}
+      </div>
+    )}
+  </td>
+);
+
+const ConflictNotice = ({ conflicts }: { conflicts: LR0Analysis['conflicts'] }) => (
+  <section className="rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
+    LR(0) 分析表存在 {conflicts.length} 处冲突，输入串分析会在冲突单元停止。
+  </section>
+);
+
+const LRParseProcess = ({ parseResult }: { parseResult: LR0ParseResult }) => (
+  <section className="overflow-hidden rounded-md border border-neutral-200 bg-white">
+    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-neutral-200 px-4 py-3">
+      <div>
+        <h2 className="text-sm font-semibold text-ink-950">输入串语法分析过程</h2>
+        <p className="mt-1 text-xs text-ink-600">输入：<span className="font-mono">{parseResult.inputTokens.join(' ')}</span></p>
+      </div>
+      <span className="rounded border border-neutral-200 bg-neutral-50 px-2 py-1 text-xs text-ink-600">{parseResult.parseSteps.length} 步</span>
+    </div>
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[860px] border-collapse text-sm">
+        <thead>
+          <tr className="bg-neutral-50">
+            <th className="border-b border-r border-neutral-200 px-3 py-3 font-semibold text-ink-600">步</th>
+            <th className="border-b border-r border-neutral-200 px-3 py-3 font-semibold text-ink-600">状态栈</th>
+            <th className="border-b border-r border-neutral-200 px-3 py-3 font-semibold text-ink-600">符号栈</th>
+            <th className="border-b border-r border-neutral-200 px-3 py-3 font-semibold text-ink-600">剩余输入</th>
+            <th className="border-b border-r border-neutral-200 px-3 py-3 font-semibold text-ink-600">动作</th>
+            <th className="border-b border-neutral-200 px-3 py-3 font-semibold text-ink-600">说明</th>
+          </tr>
+        </thead>
+        <tbody>
+          {parseResult.parseSteps.map((step) => (
+            <tr key={step.index} className={step.action === 'error' ? 'bg-red-50' : undefined}>
+              <td className="border-b border-r border-neutral-200 px-3 py-3 font-mono text-xs text-ink-400">{step.index}</td>
+              <td className="border-b border-r border-neutral-200 px-3 py-3 font-mono text-xs text-ink-950">{step.stateStack.join(' ')}</td>
+              <td className="border-b border-r border-neutral-200 px-3 py-3 font-mono text-xs text-ink-950">{step.symbolStack.join(' ')}</td>
+              <td className="border-b border-r border-neutral-200 px-3 py-3 font-mono text-xs text-ink-950">{step.input.join(' ')}</td>
+              <td className="border-b border-r border-neutral-200 px-3 py-3"><span className="rounded border border-neutral-200 bg-neutral-50 px-2 py-1 text-xs text-ink-600">{actionLabel(step.action)}</span></td>
+              <td className="border-b border-neutral-200 px-3 py-3 text-ink-600">{step.message}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  </section>
+);
+
+const formatTableEntry = (entry: LR0TableEntry) => {
+  if (entry.action === 'shift') {
+    return `s${entry.targetState}`;
+  }
+  if (entry.action === 'goto') {
+    return `${entry.targetState}`;
+  }
+  if (entry.action === 'accept') {
+    return 'acc';
+  }
+  return `r${entry.production?.id.replace(/^p/, '') ?? ''}`;
+};
+
+const actionLabel = (action: LR0ParseStep['action']) => {
+  if (action === 'shift') {
+    return '移进';
+  }
+  if (action === 'reduce') {
+    return '归约';
+  }
+  if (action === 'accept') {
+    return '接受';
+  }
+  return '错误';
+};
 
 const ResultAside = ({ analysis }: { analysis: LR0Analysis }) => (
   <aside className="hidden border-l border-neutral-200 bg-white xl:block">

@@ -1,3 +1,5 @@
-export const sampleLR0Grammar = `E -> E + T | T
-T -> T * F | F
-F -> ( E ) | id`;
+export const sampleLR0Grammar = `S -> A
+A -> a A b
+A -> c`;
+
+export const sampleLR0Input = 'a a c b b';

@@ -1,4 +1,4 @@
-import { EPSILON, parseGrammar, type Grammar, type GrammarError, type Production } from './grammar';
+import { EOF_SYMBOL, EPSILON, parseGrammar, type Grammar, type GrammarError, type Production } from './grammar';
 
 export interface LR0Item {
   productionId: string;
@@ -48,6 +48,38 @@ export interface LR0ConstructionStep {
   visibleTransitionCount: number;
 }
 
+export type LR0ActionKind = 'shift' | 'reduce' | 'accept';
+
+export interface LR0TableEntry {
+  id: string;
+  table: 'ACTION' | 'GOTO';
+  state: number;
+  symbol: string;
+  action: LR0ActionKind | 'goto';
+  targetState?: number;
+  production?: Production;
+  item?: LR0ItemView;
+  reason: string;
+}
+
+export interface LR0Conflict {
+  table: 'ACTION' | 'GOTO';
+  state: number;
+  symbol: string;
+  entries: LR0TableEntry[];
+}
+
+export interface LR0ParseStep {
+  index: number;
+  stateStack: number[];
+  symbolStack: string[];
+  input: string[];
+  action: LR0ActionKind | 'goto' | 'error';
+  tableEntry?: LR0TableEntry;
+  production?: Production;
+  message: string;
+}
+
 export interface LR0Analysis {
   originalGrammar: Grammar;
   grammar: Grammar;
@@ -55,6 +87,10 @@ export interface LR0Analysis {
   states: LR0ItemSet[];
   transitions: LR0Transition[];
   constructionSteps: LR0ConstructionStep[];
+  tableEntries: LR0TableEntry[];
+  actionTable: Record<number, Record<string, LR0TableEntry[]>>;
+  gotoTable: Record<number, Record<string, LR0TableEntry[]>>;
+  conflicts: LR0Conflict[];
 }
 
 export interface LR0Result {
@@ -66,6 +102,8 @@ type ItemMap = Map<string, LR0Item>;
 
 const productionDisplay = (lhs: string, rhs: string[]) =>
   `${lhs} -> ${rhs.length === 0 ? EPSILON : rhs.join(' ')}`;
+
+const productionNumber = (production: Production) => Number(production.id.replace(/^p/, ''));
 
 const createAugmentedStart = (grammar: Grammar) => {
   let candidate = `${grammar.startSymbol}'`;
@@ -247,6 +285,123 @@ const pushStep = (
   });
 };
 
+const createEmptyActionTable = (stateCount: number, terminals: string[]) =>
+  Object.fromEntries(
+    Array.from({ length: stateCount }, (_, index) => [
+      index,
+      Object.fromEntries([...terminals, EOF_SYMBOL].map((terminal) => [terminal, [] as LR0TableEntry[]])),
+    ]),
+  ) as Record<number, Record<string, LR0TableEntry[]>>;
+
+const createEmptyGotoTable = (stateCount: number, nonTerminals: string[]) =>
+  Object.fromEntries(
+    Array.from({ length: stateCount }, (_, index) => [
+      index,
+      Object.fromEntries(nonTerminals.map((nonTerminal) => [nonTerminal, [] as LR0TableEntry[]])),
+    ]),
+  ) as Record<number, Record<string, LR0TableEntry[]>>;
+
+const addTableEntry = (
+  tableEntries: LR0TableEntry[],
+  entry: Omit<LR0TableEntry, 'id'>,
+) => {
+  tableEntries.push({
+    ...entry,
+    id: `lr0-table-${tableEntries.length + 1}`,
+  });
+};
+
+const buildLR0Table = (
+  analysis: Omit<LR0Analysis, 'tableEntries' | 'actionTable' | 'gotoTable' | 'conflicts'>,
+) => {
+  const terminals = analysis.grammar.terminals;
+  const nonTerminals = analysis.originalGrammar.nonTerminals;
+  const actionTable = createEmptyActionTable(analysis.states.length, terminals);
+  const gotoTable = createEmptyGotoTable(analysis.states.length, nonTerminals);
+  const tableEntries: LR0TableEntry[] = [];
+
+  for (const transition of analysis.transitions) {
+    if (terminals.includes(transition.symbol)) {
+      addTableEntry(tableEntries, {
+        table: 'ACTION',
+        state: transition.from,
+        symbol: transition.symbol,
+        action: 'shift',
+        targetState: transition.to,
+        reason: `DFA 中存在 I${transition.from} -- ${transition.symbol} --> I${transition.to}，因此 ACTION[${transition.from}, ${transition.symbol}] = s${transition.to}。`,
+      });
+    } else if (nonTerminals.includes(transition.symbol)) {
+      addTableEntry(tableEntries, {
+        table: 'GOTO',
+        state: transition.from,
+        symbol: transition.symbol,
+        action: 'goto',
+        targetState: transition.to,
+        reason: `DFA 中存在 I${transition.from} -- ${transition.symbol} --> I${transition.to}，因此 GOTO[${transition.from}, ${transition.symbol}] = ${transition.to}。`,
+      });
+    }
+  }
+
+  for (const state of analysis.states) {
+    for (const item of state.items) {
+      const completed = item.dot === item.production.rhs.length;
+      if (!completed) {
+        continue;
+      }
+
+      if (item.production.id === analysis.augmentedProduction.id) {
+        addTableEntry(tableEntries, {
+          table: 'ACTION',
+          state: state.index,
+          symbol: EOF_SYMBOL,
+          action: 'accept',
+          item,
+          reason: `项目 ${item.display} 表示增广开始产生式已经识别完成，因此 ACTION[${state.index}, ${EOF_SYMBOL}] = acc。`,
+        });
+        continue;
+      }
+
+      for (const symbol of [...terminals, EOF_SYMBOL]) {
+        addTableEntry(tableEntries, {
+          table: 'ACTION',
+          state: state.index,
+          symbol,
+          action: 'reduce',
+          production: item.production,
+          item,
+          reason: `LR(0) 项目 ${item.display} 已完成，因此对所有终结符填入 ACTION[${state.index}, ${symbol}] = r${productionNumber(item.production)}。`,
+        });
+      }
+    }
+  }
+
+  for (const entry of tableEntries) {
+    if (entry.table === 'ACTION') {
+      actionTable[entry.state][entry.symbol].push(entry);
+    } else {
+      gotoTable[entry.state][entry.symbol].push(entry);
+    }
+  }
+
+  const actionConflicts = Object.entries(actionTable).flatMap(([state, row]) =>
+    Object.entries(row).flatMap(([symbol, entries]) =>
+      entries.length > 1 ? [{ table: 'ACTION' as const, state: Number(state), symbol, entries }] : [],
+    ),
+  );
+  const gotoConflicts = Object.entries(gotoTable).flatMap(([state, row]) =>
+    Object.entries(row).flatMap(([symbol, entries]) =>
+      entries.length > 1 ? [{ table: 'GOTO' as const, state: Number(state), symbol, entries }] : [],
+    ),
+  );
+
+  return {
+    tableEntries,
+    actionTable,
+    gotoTable,
+    conflicts: [...actionConflicts, ...gotoConflicts],
+  };
+};
+
 export const buildLR0CanonicalCollection = (originalGrammar: Grammar): LR0Analysis => {
   const augmented = augmentGrammar(originalGrammar);
   const grammar = augmented.grammar;
@@ -350,7 +505,7 @@ export const buildLR0CanonicalCollection = (originalGrammar: Grammar): LR0Analys
     }
   }
 
-  return {
+  const partialAnalysis = {
     originalGrammar,
     grammar,
     augmentedProduction: augmented.augmentedProduction,
@@ -358,6 +513,125 @@ export const buildLR0CanonicalCollection = (originalGrammar: Grammar): LR0Analys
     transitions,
     constructionSteps,
   };
+  const table = buildLR0Table(partialAnalysis);
+
+  return {
+    ...partialAnalysis,
+    ...table,
+  };
+};
+
+const normalizeInput = (input: string) => {
+  const tokens = input.trim().split(/\s+/).filter(Boolean);
+  return tokens[tokens.length - 1] === EOF_SYMBOL ? tokens : [...tokens, EOF_SYMBOL];
+};
+
+export const runLR0Parser = (analysis: LR0Analysis, rawInput: string) => {
+  const inputTokens = normalizeInput(rawInput);
+  const stateStack = [0];
+  const symbolStack = [EOF_SYMBOL];
+  const steps: LR0ParseStep[] = [];
+  let cursor = 0;
+  let guard = 0;
+
+  while (guard < 300) {
+    guard += 1;
+    const state = stateStack[stateStack.length - 1];
+    const lookahead = inputTokens[cursor] ?? EOF_SYMBOL;
+    const snapshot = {
+      stateStack: [...stateStack],
+      symbolStack: [...symbolStack],
+      input: inputTokens.slice(cursor),
+    };
+    const entries = analysis.actionTable[state]?.[lookahead] ?? [];
+
+    if (entries.length !== 1) {
+      steps.push({
+        index: steps.length + 1,
+        ...snapshot,
+        action: 'error',
+        message:
+          entries.length > 1
+            ? `ACTION[${state}, ${lookahead}] 存在冲突，无法唯一选择动作。`
+            : `ACTION[${state}, ${lookahead}] 为空，分析失败。`,
+      });
+      break;
+    }
+
+    const entry = entries[0];
+
+    if (entry.action === 'shift') {
+      symbolStack.push(lookahead);
+      stateStack.push(entry.targetState!);
+      cursor += 1;
+      steps.push({
+        index: steps.length + 1,
+        ...snapshot,
+        action: 'shift',
+        tableEntry: entry,
+        message: `ACTION[${state}, ${lookahead}] = s${entry.targetState}，移进 ${lookahead}。`,
+      });
+      continue;
+    }
+
+    if (entry.action === 'accept') {
+      steps.push({
+        index: steps.length + 1,
+        ...snapshot,
+        action: 'accept',
+        tableEntry: entry,
+        message: 'ACTION 表给出 acc，分析成功。',
+      });
+      break;
+    }
+
+    const production = entry.production!;
+    for (let index = 0; index < production.rhs.length; index += 1) {
+      symbolStack.pop();
+      stateStack.pop();
+    }
+
+    const gotoState = stateStack[stateStack.length - 1];
+    const gotoEntries = analysis.gotoTable[gotoState]?.[production.lhs] ?? [];
+    if (gotoEntries.length !== 1) {
+      steps.push({
+        index: steps.length + 1,
+        ...snapshot,
+        action: 'error',
+        tableEntry: entry,
+        production,
+        message:
+          gotoEntries.length > 1
+            ? `按 ${production.display} 归约后，GOTO[${gotoState}, ${production.lhs}] 存在冲突。`
+            : `按 ${production.display} 归约后，GOTO[${gotoState}, ${production.lhs}] 为空。`,
+      });
+      break;
+    }
+
+    symbolStack.push(production.lhs);
+    stateStack.push(gotoEntries[0].targetState!);
+    steps.push({
+      index: steps.length + 1,
+      ...snapshot,
+      action: 'reduce',
+      tableEntry: entry,
+      production,
+      message: `ACTION[${state}, ${lookahead}] = r${productionNumber(production)}，按 ${production.display} 归约，转到 I${gotoEntries[0].targetState}。`,
+    });
+  }
+
+  if (guard >= 300) {
+    steps.push({
+      index: steps.length + 1,
+      stateStack: [...stateStack],
+      symbolStack: [...symbolStack],
+      input: inputTokens.slice(cursor),
+      action: 'error',
+      message: '分析步骤超过上限，可能存在异常循环。',
+    });
+  }
+
+  return { inputTokens, parseSteps: steps };
 };
 
 export const analyzeLR0Source = (source: string): LR0Result => {

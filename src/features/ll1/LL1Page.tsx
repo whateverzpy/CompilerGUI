@@ -4,7 +4,9 @@ import { Button } from '../../components/Button';
 import { EOF_SYMBOL, type GrammarError } from '../../core/grammar';
 import {
   analyzeLL1Source,
+  runLL1Parser,
   type LL1Analysis,
+  type LL1ParseStep,
   type LL1TableEntry,
 } from '../../core/ll1';
 import { classNames } from '../../lib/classNames';
@@ -38,28 +40,48 @@ const firstFilledCell = (analysis?: LL1Analysis): SelectedCell | undefined => {
 
 const formatSet = (values: string[]) => (values.length ? `{ ${values.join(', ')} }` : '∅');
 
+interface LL1ParseResult {
+  inputTokens: string[];
+  parseSteps: LL1ParseStep[];
+}
+
 export const LL1Page = ({ onBack }: LL1PageProps) => {
-  const initialResult = useMemo(() => analyzeLL1Source(sampleLL1Grammar, sampleLL1Input), []);
+  const initialResult = useMemo(() => analyzeLL1Source(sampleLL1Grammar), []);
   const [grammarText, setGrammarText] = useState(sampleLL1Grammar);
-  const [inputText, setInputText] = useState(sampleLL1Input);
+  const [inputText, setInputText] = useState('');
   const [analysis, setAnalysis] = useState(initialResult.analysis);
+  const [parseResult, setParseResult] = useState<LL1ParseResult | undefined>();
   const [errors, setErrors] = useState<GrammarError[]>(initialResult.errors);
   const [selectedCell, setSelectedCell] = useState<SelectedCell | undefined>(
     firstFilledCell(initialResult.analysis),
   );
 
-  const runAnalysis = () => {
-    const result = analyzeLL1Source(grammarText, inputText);
+  const buildTable = () => {
+    const result = analyzeLL1Source(grammarText);
     setAnalysis(result.analysis);
+    setParseResult(undefined);
     setErrors(result.errors);
     setSelectedCell(firstFilledCell(result.analysis));
   };
 
-  const resetSample = () => {
-    const result = analyzeLL1Source(sampleLL1Grammar, sampleLL1Input);
-    setGrammarText(sampleLL1Grammar);
-    setInputText(sampleLL1Input);
+  const runAnalysis = () => {
+    const result = analyzeLL1Source(grammarText);
     setAnalysis(result.analysis);
+    setErrors(result.errors);
+    setSelectedCell(firstFilledCell(result.analysis));
+    setParseResult(
+      result.analysis && inputText.trim()
+        ? runLL1Parser(result.analysis.grammarAnalysis, result.analysis.table, inputText)
+        : undefined,
+    );
+  };
+
+  const resetSample = () => {
+    const result = analyzeLL1Source(sampleLL1Grammar);
+    setGrammarText(sampleLL1Grammar);
+    setInputText('');
+    setAnalysis(result.analysis);
+    setParseResult(undefined);
     setErrors(result.errors);
     setSelectedCell(firstFilledCell(result.analysis));
   };
@@ -85,8 +107,8 @@ export const LL1Page = ({ onBack }: LL1PageProps) => {
               aria-label="恢复示例"
               title="恢复示例"
             />
-            <Button icon={<Wand2 size={15} />} onClick={runAnalysis} variant="primary">
-              开始分析
+            <Button icon={<Wand2 size={15} />} onClick={buildTable} variant="primary">
+              构造表
             </Button>
           </div>
         </div>
@@ -108,9 +130,13 @@ export const LL1Page = ({ onBack }: LL1PageProps) => {
               className="h-10 rounded-md border border-neutral-300 bg-neutral-50 px-3 font-mono text-sm text-ink-950 outline-none focus:border-ink-950 focus:bg-white focus:shadow-focus"
               value={inputText}
               onChange={(event) => setInputText(event.target.value)}
-              placeholder={`例如：id + id * id，可省略结尾 ${EOF_SYMBOL}`}
+              placeholder={`输入后点击分析：${sampleLL1Input}，可省略结尾 ${EOF_SYMBOL}`}
             />
           </label>
+
+          <Button icon={<Wand2 size={15} />} onClick={runAnalysis} disabled={!inputText.trim()}>
+            分析输入串
+          </Button>
 
           {errors.length > 0 && (
             <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-900">
@@ -167,12 +193,14 @@ export const LL1Page = ({ onBack }: LL1PageProps) => {
               onSelectCell={setSelectedCell}
             />
 
-            <ParseProcess
-              analysis={analysis}
-              onSelectEntry={(entry) =>
-                setSelectedCell({ nonTerminal: entry.nonTerminal, terminal: entry.terminal })
-              }
-            />
+            {parseResult && (
+              <ParseProcess
+                parseResult={parseResult}
+                onSelectEntry={(entry) =>
+                  setSelectedCell({ nonTerminal: entry.nonTerminal, terminal: entry.terminal })
+                }
+              />
+            )}
           </div>
         ) : (
           <section className="rounded-md border border-neutral-200 bg-white p-5 text-sm text-ink-600">
@@ -331,21 +359,21 @@ const CellDetail = ({ selectedCell, entries }: CellDetailProps) => (
 );
 
 interface ParseProcessProps {
-  analysis: LL1Analysis;
+  parseResult: LL1ParseResult;
   onSelectEntry: (entry: LL1TableEntry) => void;
 }
 
-const ParseProcess = ({ analysis, onSelectEntry }: ParseProcessProps) => (
+const ParseProcess = ({ parseResult, onSelectEntry }: ParseProcessProps) => (
   <section className="overflow-hidden rounded-md border border-neutral-200 bg-white">
     <div className="flex flex-wrap items-center justify-between gap-3 border-b border-neutral-200 px-4 py-3">
       <div>
         <h2 className="text-sm font-semibold text-ink-950">预测分析过程</h2>
         <p className="mt-1 text-xs text-ink-600">
-          输入：<span className="font-mono">{analysis.inputTokens.join(' ')}</span>
+          输入：<span className="font-mono">{parseResult.inputTokens.join(' ')}</span>
         </p>
       </div>
       <span className="rounded border border-neutral-200 bg-neutral-50 px-2 py-1 text-xs text-ink-600">
-        {analysis.parseSteps.length} 步
+        {parseResult.parseSteps.length} 步
       </span>
     </div>
     <div className="overflow-x-auto">
@@ -360,7 +388,7 @@ const ParseProcess = ({ analysis, onSelectEntry }: ParseProcessProps) => (
           </tr>
         </thead>
         <tbody>
-          {analysis.parseSteps.map((step) => (
+          {parseResult.parseSteps.map((step) => (
             <tr key={step.index} className={step.action === 'error' ? 'bg-red-50' : undefined}>
               <td className="border-b border-r border-neutral-200 px-3 py-3 font-mono text-xs text-ink-400">
                 {step.index}
